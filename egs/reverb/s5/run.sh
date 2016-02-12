@@ -59,6 +59,11 @@ elif [[ $(hostname -f) == *.merl.com ]] ; then
 else
   echo "Set the data directory locations." && exit 1;
 fi
+
+# If you don't have REVERB data,
+# set the directry of the multi-channel WSJ data (LDC2014S03)
+export wsj_multi=
+
 export reverb_dt=$REVERB_home/REVERB_WSJCAM0_dt
 export reverb_et=$REVERB_home/REVERB_WSJCAM0_et
 export reverb_real_dt=$REVERB_home/MC_WSJ_AV_Dev
@@ -87,6 +92,9 @@ if [ $stage -le 1 ]; then
   # Note that utterance lengths match the original set.
   # This enables using clean alignments in multi-condition training (stereo training)
   local/REVERB_create_mcdata.sh $wsjcam0 $reverb_tr
+
+  # Generate evaluation and development data (that include real and simulated data)
+  local/REVERB_create_dtetdata.sh $wsjcam0 $wsj_multi
 fi
 
 if [ $stage -le 2 ]; then
