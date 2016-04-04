@@ -5,10 +5,10 @@
 ## Creating REVERB data and directory structure.
 ## (Real data and simulated data for dev and eval sets)
 
-#if [ -d $REVERB_home ]; then
-# echo "Not creating REVERB data since it is already there."
-# exit 0
-#fi
+if [ -d $REVERB_home ]; then
+ echo "Not creating REVERB data since it is already there."
+ exit 0
+fi
 
 if [ $# -ne 2 ]; then
   echo "\nUSAGE: %s <wsjcam0 data dir> <multi-channel wsj data dir>\n"
