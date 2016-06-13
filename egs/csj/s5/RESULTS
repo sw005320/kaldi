@@ -1,6 +1,6 @@
 ## These are results using the third edition of CSJ.
 for eval_num in `seq 3`; do echo "=== evaluation set $eval_num ===" ;\
- for x in exp/{tri,dnn}*/decode_eval${eval_num}*; do [ -d $x ] && grep WER $x/wer_* | utils/best_wer.sh; done ; done
+ for x in exp/{tri,dnn,nnet3/nnet_tdnn}*/decode_eval${eval_num}*; do [ -d $x ] && grep WER $x/wer_* | utils/best_wer.sh; done ; done
 
 ## Results of using training set that contains "academic" and "other" speech data (default).
 ## If you want to use "simulated public speaking" and "dialog" data, you should check the following script [local/csj_data_prep.sh line 44].
@@ -63,7 +63,12 @@ for eval_num in `seq 3`; do echo "=== evaluation set $eval_num ===" ;\
 %WER 12.27 [ 2109 / 17189, 276 ins, 397 del, 1436 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr/decode_eval3_csj/wer_15_1.0
 %WER 11.82 [ 2031 / 17189, 319 ins, 317 del, 1395 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval3_csj/wer_15_0.5
 
-# nnet3 TDNN
+# RNN-LM rescoring
+%WER 10.17 [ 2646 / 26028, 323 ins, 595 del, 1728 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval1_csj_rnnlm.h400_L0.5/wer_14_0.5
+%WER 8.47 [ 2257 / 26661, 264 ins, 399 del, 1594 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval2_csj_rnnlm.h400_L0.5/wer_12_1.0
+%WER 10.91 [ 1876 / 17189, 264 ins, 336 del, 1276 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval3_csj_rnnlm.h400_L0.5/wer_18_0.5
+
+## nnet3 TDNN
 %WER 11.34 [ 2952 / 26028, 286 ins, 750 del, 1916 sub ] exp/nnet3/nnet_tdnn/decode_eval1_csj/wer_12_0.5
 %WER 9.07 [ 2417 / 26661, 276 ins, 414 del, 1727 sub ] exp/nnet3/nnet_tdnn/decode_eval2_csj/wer_12_0.0
 %WER 11.46 [ 1970 / 17189, 233 ins, 400 del, 1337 sub ] exp/nnet3/nnet_tdnn/decode_eval3_csj/wer_14_0.5
@@ -128,7 +133,12 @@ for eval_num in `seq 3`; do echo "=== evaluation set $eval_num ===" ;\
 %WER 9.65 [ 1658 / 17189, 237 ins, 271 del, 1150 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr/decode_eval3_csj/wer_14_1.0
 %WER 9.29 [ 1597 / 17189, 236 ins, 249 del, 1112 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval3_csj/wer_14_1.0
 
-# nnet3 TDNN
+## RNN-LM rescoring
+%WER 9.65 [ 2512 / 26028, 265 ins, 582 del, 1665 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval1_csj_rnnlm.h400_L0.75/wer_15_1.0
+%WER 8.08 [ 2155 / 26661, 286 ins, 331 del, 1538 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval2_csj_rnnlm.h400_L0.75/wer_12_0.5
+%WER 8.57 [ 1473 / 17189, 237 ins, 211 del, 1025 sub ] exp/dnn5b_pretrain-dbn_dnn_smbr_i1lats/decode_eval3_csj_rnnlm.h400_L0.75/wer_13_1.0
+
+## nnet3 TDNN
 %WER 11.15 [ 2901 / 26028, 297 ins, 697 del, 1907 sub ] exp/nnet3/nnet_tdnn/decode_eval1_csj/wer_15_0.0
 %WER 8.47 [ 2259 / 26661, 289 ins, 381 del, 1589 sub ] exp/nnet3/nnet_tdnn/decode_eval2_csj/wer_12_0.0
 %WER 9.21 [ 1583 / 17189, 240 ins, 258 del, 1085 sub ] exp/nnet3/nnet_tdnn/decode_eval3_csj/wer_12_0.0

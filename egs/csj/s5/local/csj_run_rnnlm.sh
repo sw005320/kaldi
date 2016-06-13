@@ -44,7 +44,7 @@ local/csj_train_rnnlms.sh --dict-suffix "_nosp" \
 echo h500 Begin
 local/csj_train_rnnlms.sh --dict-suffix "_nosp" \
     --hidden 500 --nwords 10000 --class 200 \
-    --direct 0 data/local/rnnlm.h400
+    --direct 0 data/local/rnnlm.h500
 
 #SKIP
 
@@ -60,7 +60,7 @@ for dict in rnnlm.h30 rnnlm.h100 rnnlm.h200 rnnlm.h300 rnnlm.h400 rnnlm.h500 ;do
 
       echo "rnnlm0.5"
       steps/rnnlmrescore.sh --rnnlm_ver $rnnlm_ver \
-        --N 100 --cmd "queue -l mem_free=1G" --inv-acwt $acwt 0.5 \
+        --N 100 --cmd "$decode_cmd -l mem_free=1G" --inv-acwt $acwt 0.5 \
         data/lang_csj_tg $dir data/$eval_num $sourcedir ${resultsdir}_L0.5
       
       rm -rf ${resultsdir}_L0.25

@@ -281,7 +281,7 @@ local/nnet/run_dnn.sh
 # local/nnet3/run_tdnn.sh
 
 ##### Start RNN-LM training for rescoring #####
-# local/csj_run_rnnlm.sh
+local/csj_run_rnnlm.sh
 
 # getting results (see RESULTS file)
 # for eval_num in eval1 eval2 eval3 $dev_set ; do
