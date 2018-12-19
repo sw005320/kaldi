@@ -42,13 +42,13 @@ fi
 if [ $stage -le 1 ]; then
   # Make MFCCs for each dataset.
   for name in train dihard_2018_dev dihard_2018_eval; do
-    steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
+    steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 20 --cmd "$train_cmd" \
       data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
   done
 
   # Compute the energy-based VAD for training set.
-  sid/compute_vad_decision.sh --nj 40 --cmd "$train_cmd" \
+  sid/compute_vad_decision.sh --nj 20 --cmd "$train_cmd" \
       data/train exp/make_vad $vaddir
   utils/fix_data_dir.sh data/train
 
@@ -59,7 +59,7 @@ if [ $stage -le 1 ]; then
   # diarization/nnet3/xvector/extract_xvectors.sh) it would need to be
   # performed after the subsegmentation, which leads to poorer results.
   for name in train dihard_2018_dev dihard_2018_eval; do
-    local/nnet3/xvector/prepare_feats.sh --nj 40 --cmd "$train_cmd" \
+    local/nnet3/xvector/prepare_feats.sh --nj 20 --cmd "$train_cmd" \
       data/$name data/${name}_cmn exp/${name}_cmn
     if [ -f data/$name/vad.scp ]; then
       cp data/$name/vad.scp data/${name}_cmn/
@@ -75,7 +75,7 @@ if [ $stage -le 1 ]; then
   # The segments are created using an energy-based speech activity
   # detection (SAD) system, but this is not necessary.  You can replace
   # this with segments computed from your favorite SAD.
-  diarization/vad_to_segments.sh --nj 40 --cmd "$train_cmd" \
+  diarization/vad_to_segments.sh --nj 20 --cmd "$train_cmd" \
       data/train_cmn data/train_cmn_segmented
 fi
 
@@ -141,7 +141,7 @@ if [ $stage -le 3 ]; then
   # Make MFCCs for the augmented data.  Note that we do not compute a new
   # vad.scp file here.  Instead, we use the vad.scp from the clean version of
   # the list.
-  steps/make_mfcc.sh --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd" \
+  steps/make_mfcc.sh --mfcc-config conf/mfcc.conf --nj 20 --cmd "$train_cmd" \
     data/train_aug_1m exp/make_mfcc $mfccdir
 
   # Combine the clean and augmented training data.  This is now roughly
@@ -154,7 +154,7 @@ if [ $stage -le 4 ]; then
   # This script applies CMVN and removes nonspeech frames.  Note that this is somewhat
   # wasteful, as it roughly doubles the amount of training data on disk.  After
   # creating training examples, this can be removed.
-  local/nnet3/xvector/prepare_feats_for_egs.sh --nj 40 --cmd "$train_cmd" \
+  local/nnet3/xvector/prepare_feats_for_egs.sh --nj 20 --cmd "$train_cmd" \
     data/train_combined data/train_combined_no_sil exp/train_combined_no_sil
   utils/fix_data_dir.sh data/train_combined_no_sil
 fi

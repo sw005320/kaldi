@@ -1,0 +1,1 @@
+../../../chime5/s5/local/check_tools.sh
