@@ -9,6 +9,11 @@
 # See ../README.txt for more info on data required.
 # Results (diarization error rate) are inline in comments below.
 
+# Begin configuration section.
+stage=0
+# End configuration section
+. ./utils/parse_options.sh
+
 . ./cmd.sh
 . ./path.sh
 set -e
@@ -21,8 +26,6 @@ nnet_dir=exp/xvector_nnet_1a
 musan_root=/export/corpora/JHU/musan
 dihard_2018_dev=/export/corpora/LDC/LDC2018E31
 dihard_2018_eval=/export/corpora/LDC/LDC2018E32v1.1
-
-stage=0
 
 if [ $stage -le 0 ]; then
   local/make_voxceleb2.pl $voxceleb2_root dev data/voxceleb2_train
@@ -42,7 +45,7 @@ fi
 if [ $stage -le 1 ]; then
   # Make MFCCs for each dataset.
   for name in train dihard_2018_dev dihard_2018_eval; do
-    steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 20 --cmd "$train_cmd" \
+    steps/make_mfcc.sh --write-utt2num-frames true --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd --max-jobs-run 20" \
       data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
   done
@@ -98,7 +101,7 @@ if [ $stage -le 2 ]; then
 
   # Make a reverberated version of the training data.  Note that we don't add any
   # additive noise here.
-  python steps/data/reverberate_data_dir.py \
+  steps/data/reverberate_data_dir.py \
     "${rvb_opts[@]}" \
     --speech-rvb-probability 1 \
     --pointsource-noise-addition-probability 0 \
@@ -123,11 +126,11 @@ if [ $stage -le 2 ]; then
   done
 
   # Augment with musan_noise
-  python steps/data/augment_data_dir.py --utt-suffix "noise" --fg-interval 1 --fg-snrs "15:10:5:0" --fg-noise-dir "data/musan_noise" data/train data/train_noise
+  steps/data/augment_data_dir.py --utt-suffix "noise" --fg-interval 1 --fg-snrs "15:10:5:0" --fg-noise-dir "data/musan_noise" data/train data/train_noise
   # Augment with musan_music
-  python steps/data/augment_data_dir.py --utt-suffix "music" --bg-snrs "15:10:8:5" --num-bg-noises "1" --bg-noise-dir "data/musan_music" data/train data/train_music
+  steps/data/augment_data_dir.py --utt-suffix "music" --bg-snrs "15:10:8:5" --num-bg-noises "1" --bg-noise-dir "data/musan_music" data/train data/train_music
   # Augment with musan_speech
-  python steps/data/augment_data_dir.py --utt-suffix "babble" --bg-snrs "20:17:15:13" --num-bg-noises "3:4:5:6:7" --bg-noise-dir "data/musan_speech" data/train data/train_babble
+  steps/data/augment_data_dir.py --utt-suffix "babble" --bg-snrs "20:17:15:13" --num-bg-noises "3:4:5:6:7" --bg-noise-dir "data/musan_speech" data/train data/train_babble
 
   # Combine reverb, noise, music, and babble into one directory.
   utils/combine_data.sh data/train_aug data/train_reverb data/train_noise data/train_music data/train_babble
@@ -141,7 +144,7 @@ if [ $stage -le 3 ]; then
   # Make MFCCs for the augmented data.  Note that we do not compute a new
   # vad.scp file here.  Instead, we use the vad.scp from the clean version of
   # the list.
-  steps/make_mfcc.sh --mfcc-config conf/mfcc.conf --nj 20 --cmd "$train_cmd" \
+  steps/make_mfcc.sh --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd --max-jobs-run 20" \
     data/train_aug_1m exp/make_mfcc $mfccdir
 
   # Combine the clean and augmented training data.  This is now roughly
@@ -185,7 +188,7 @@ if [ $stage -le 5 ]; then
 fi
 
 # Stages 6 through 8 are handled in run_xvector.sh, a TDNN embedding extractor is trained.
-local/nnet3/xvector/run_xvector.sh --stage $stage \
+local/nnet3/xvector/run_xvector.sh --stage $stage --train-stage -1 \
   --data data/train_combined_no_sil --nnet-dir $nnet_dir \
   --egs-dir $nnet_dir/egs
 
