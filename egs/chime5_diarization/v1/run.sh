@@ -36,13 +36,13 @@ ivec_dir=exp/extractor_c${num_components}_i${ivector_dim}
 chime5_corpus=/export/corpora4/CHiME5
 json_dir=${chime5_corpus}/transcriptions
 audio_dir=${chime5_corpus}/audio
-# preliminary investigation shows that arry u06 performs the best DER performance
+# preliminary investigation shows that array u06 scores the best DER performance
 # exp/extractor_c2048_i400/results_u01/DER_threshold.txt:61.00
 # exp/extractor_c2048_i400/results_u02/DER_threshold.txt:62.86
 # exp/extractor_c2048_i400/results_u03/DER_threshold.txt:60.88
 # exp/extractor_c2048_i400/results_u04/DER_threshold.txt:64.44
 # exp/extractor_c2048_i400/results_u06/DER_threshold.txt:59.77
-# skip u03 as they are missing
+# skip u05 as it is missing
 mictype=u06
 
 if [ $stage -le 0 ]; then
@@ -62,14 +62,12 @@ fi
 
 if [ $stage -le 1 ]; then
   for dset in dev eval; do
-    local/prepare_data.sh --mictype ${mictype} \
-			  ${audio_dir}/${dset} ${json_dir}/${dset} data/${dset}_${mictype}
-  done
-  
-  # preparing rttm and reco2num_spk
-  # CHiME-5 always has "4" speakers per recording
-  for dset in dev eval; do
     name=${dset}_${mictype}
+    # use the original CHiME-5 data preparation script
+    # note that this includes speaker ID information, which must not be used in diarization
+    local/prepare_data.sh --mictype ${mictype} \
+			  ${audio_dir}/${dset} ${json_dir}/${dset} data/${name}
+    # preparing rttm
     steps/segmentation/convert_utt2spk_and_segments_to_rttm.py \
       data/${name}/utt2spk \
       data/${name}/segments \
@@ -92,6 +90,8 @@ if [ $stage -le 1 ]; then
       <(cut -f 2- -d" " data/${name}/text.org) \
       > data/${name}/text
     utils/utt2spk_to_spk2utt.pl data/${name}/utt2spk > data/${name}/spk2utt
+    # preparing reco2num_spk
+    # CHiME-5 always has "4" speakers per recording
     awk '{print $2 " 4"}' data/${name}/rttm \
       | sort | uniq > data/${name}/reco2num_spk
     utils/fix_data_dir.sh data/${name}
