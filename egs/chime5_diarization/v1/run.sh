@@ -10,9 +10,17 @@
 # See ../README.txt for more info on data required.
 # Results (diarization error rate) are inline in comments below.
 
+# Begin configuration section.
+stage=0
+enhancement=beamformit # enhancement method
+# End configuration section
+. ./utils/parse_options.sh
+
 . ./cmd.sh
 . ./path.sh
-set -e
+
+set -e # exit on error
+
 mfccdir=`pwd`/mfcc
 vaddir=`pwd`/mfcc
 
@@ -28,8 +36,14 @@ ivec_dir=exp/extractor_c${num_components}_i${ivector_dim}
 chime5_corpus=/export/corpora4/CHiME5
 json_dir=${chime5_corpus}/transcriptions
 audio_dir=${chime5_corpus}/audio
-
-stage=0
+# preliminary investigation shows that arry u06 performs the best DER performance
+# exp/extractor_c2048_i400/results_u01/DER_threshold.txt:61.00
+# exp/extractor_c2048_i400/results_u02/DER_threshold.txt:62.86
+# exp/extractor_c2048_i400/results_u03/DER_threshold.txt:60.88
+# exp/extractor_c2048_i400/results_u04/DER_threshold.txt:64.44
+# exp/extractor_c2048_i400/results_u06/DER_threshold.txt:59.77
+# skip u03 as they are missing
+mictype=u06
 
 if [ $stage -le 0 ]; then
   local/make_voxceleb2.pl $voxceleb2_root dev data/voxceleb2_train
@@ -42,55 +56,73 @@ if [ $stage -le 0 ]; then
   utils/combine_data.sh data/train data/voxceleb2_train data/voxceleb2_test data/voxceleb1_train
 
   # Prepare the development and evaluation set for CHiME-5.
-  # skip u03 as they are missing
-  for mictype in worn u01 u02 u04 u05 u06; do
-    local/prepare_data.sh --mictype ${mictype} \
-			  ${audio_dir}/train ${json_dir}/train data/train_${mictype}
-  done
+  local/prepare_data.sh --mictype ${mictype} \
+			${audio_dir}/train ${json_dir}/train data/train_${mictype}
 fi
 
 if [ $stage -le 1 ]; then
-  # Beamforming using reference arrays
-  # enhanced WAV directory
-  enhandir=enhan
   for dset in dev eval; do
-    for mictype in u01 u02 u03 u04 u05 u06; do
-      local/run_beamformit.sh --cmd "$train_cmd" \
-			      ${audio_dir}/${dset} \
-			      ${enhandir}/${dset}_${enhancement}_${mictype} \
-			      ${mictype}
-    done
+    local/prepare_data.sh --mictype ${mictype} \
+			  ${audio_dir}/${dset} ${json_dir}/${dset} data/${dset}_${mictype}
   done
-
+  
+  # preparing rttm and reco2num_spk
+  # CHiME-5 always has "4" speakers per recording
   for dset in dev eval; do
-    local/prepare_data.sh --mictype ref "$PWD/${enhandir}/${dset}_${enhancement}_u0*" \
-			  ${json_dir}/${dset} data/${dset}_${enhancement}_ref
+    name=${dset}_${mictype}
+    steps/segmentation/convert_utt2spk_and_segments_to_rttm.py \
+      data/${name}/utt2spk \
+      data/${name}/segments \
+      data/${name}/rttm
+    # remove speaker ID information for utt2spk, spk2utt, segment, and text
+    mv data/${name}/utt2spk data/${name}/utt2spk.org
+    mv data/${name}/spk2utt data/${name}/spk2utt.org
+    mv data/${name}/segments data/${name}/segments.org
+    mv data/${name}/text data/${name}/text.org
+    paste -d " " \
+      <(awk '{print $1}' data/${name}/utt2spk.org | sed -e "s/.*\(S.*_U.*\)_.*\(\.CH..*\)/\1\2/") \
+      <(sed -e "s/.*\(S.*_U.*\)_.*\(\.CH.\).*/\1\2/" data/${name}/utt2spk.org) \
+      > data/${name}/utt2spk
+    paste -d " " \
+      <(awk '{print $1}' data/${name}/segments.org | sed -e "s/.*\(S.*_U.*\)_.*\(\.CH..*\)/\1\2/") \
+      <(cut -f 2- -d" " data/${name}/segments.org) \
+      > data/${name}/segments
+    paste -d " " \
+      <(awk '{print $1}' data/${name}/text.org | sed -e "s/.*\(S.*_U.*\)_.*\(\.CH..*\)/\1\2/") \
+      <(cut -f 2- -d" " data/${name}/text.org) \
+      > data/${name}/text
+    utils/utt2spk_to_spk2utt.pl data/${name}/utt2spk > data/${name}/spk2utt
+    awk '{print $2 " 4"}' data/${name}/rttm \
+      | sort | uniq > data/${name}/reco2num_spk
+    utils/fix_data_dir.sh data/${name}
   done
 fi
-exit
 
 if [ $stage -le 2 ]; then
   # Make MFCCs for each dataset
-  for name in train dev_${enhancement}_ref eval_${enhancement}_ref; do
+  for dset in dev eval; do
+    name=${dset}_${mictype}
     steps/make_mfcc.sh --write-utt2num-frames true \
-      --mfcc-config conf/mfcc.conf --nj 20 --cmd "$train_cmd" \
-      data/${name} exp/make_mfcc $mfccdir
+		       --mfcc-config conf/mfcc.conf --nj 8 --cmd "$train_cmd" \
+		       data/${name} exp/make_mfcc_${name} $mfccdir
     utils/fix_data_dir.sh data/${name}
   done
-
+  
   # Compute the energy-based VAD for train
   sid/compute_vad_decision.sh --nj 20 --cmd "$train_cmd" \
     data/train exp/make_vad $vaddir
   utils/fix_data_dir.sh data/train
-
+  
   # This writes features to disk after adding deltas and applying the sliding window CMN.
   # Although this is somewhat wasteful in terms of disk space, for diarization
   # it ends up being preferable to performing the CMN in memory.  If the CMN
   # were performed in memory it would need to be performed after the subsegmentation,
   # which leads to poorer results.
-  for name in train dev_${enhancement}_ref eval_${enhancement}_ref; do
-    local/prepare_feats.sh --nj 20 --cmd "$train_cmd" \
-      data/$name data/${name}_cmn exp/${name}_cmn
+  ###for name in train dev_${enhancement}_ref eval_${enhancement}_ref; do
+  for dset in dev eval; do
+    name=${dset}_${mictype}
+    local/prepare_feats.sh --nj 8 --cmd "$train_cmd" \
+			   data/$name data/${name}_cmn exp/${name}_cmn
     if [ -f data/$name/vad.scp ]; then
       cp data/$name/vad.scp data/${name}_cmn/
     fi
@@ -99,7 +131,7 @@ if [ $stage -le 2 ]; then
     fi
     utils/fix_data_dir.sh data/${name}_cmn
   done
-
+  
   echo "0.01" > data/train_cmn/frame_shift
   # Create segments to extract i-vectors from for PLDA training data.
   # The segments are created using an energy-based speech activity
@@ -148,14 +180,13 @@ if [ $stage -le 5 ]; then
   # We set apply-cmn false and apply-deltas false because we already add
   # deltas and apply cmn in stage 1.
   diarization/extract_ivectors.sh --cmd "$train_cmd --mem 20G" \
-    --nj 40 --window 1.5 --period 0.75 --apply-cmn false --apply-deltas false \
-    --min-segment 0.5 $ivec_dir \
-    data/dev_${enhancement}_ref_cmn $ivec_dir/ivectors_dev_${enhancement}_ref
-
+				  --nj 8 --window 1.5 --period 0.75 --apply-cmn false --apply-deltas false \
+				  --min-segment 0.5 $ivec_dir \
+				  data/dev_${mictype}_cmn $ivec_dir/ivectors_dev_${mictype}
   diarization/extract_ivectors.sh --cmd "$train_cmd --mem 20G" \
-    --nj 40 --window 1.5 --period 0.75 --apply-cmn false --apply-deltas false \
-    --min-segment 0.5 $ivec_dir \
-    data/eval_${enhancement}_ref_cmn $ivec_dir/ivectors_eval_${enhancement}_ref
+				  --nj 8 --window 1.5 --period 0.75 --apply-cmn false --apply-deltas false \
+				  --min-segment 0.5 $ivec_dir \
+				  data/eval_${mictype}_cmn $ivec_dir/ivectors_eval_${mictype}
 
   # Reduce the amount of training data for the PLDA training.
   utils/subset_data_dir.sh data/train_cmn_segmented 128000 data/train_cmn_segmented_128k
@@ -163,32 +194,32 @@ if [ $stage -le 5 ]; then
   # data.  A long period is used here so that we don't compute too
   # many i-vectors for each recording.
   diarization/extract_ivectors.sh --cmd "$train_cmd --mem 25G" \
-    --nj 40 --window 3.0 --period 10.0 --min-segment 1.5 --apply-cmn false --apply-deltas false \
+    --nj 20 --window 3.0 --period 10.0 --min-segment 1.5 --apply-cmn false --apply-deltas false \
     --hard-min true $ivec_dir \
     data/train_cmn_segmented_128k $ivec_dir/ivectors_train_segmented_128k
 fi
 
 if [ $stage -le 6 ]; then
   # Train a PLDA model on VoxCeleb, using CHiME-5 development set to whiten.
-  "$train_cmd" $ivec_dir/ivectors_dev_${enhancement}_ref/log/plda.log \
+  "$train_cmd" $ivec_dir/ivectors_dev_${mictype}/log/plda.log \
     ivector-compute-plda ark:$ivec_dir/ivectors_train_segmented_128k/spk2utt \
       "ark:ivector-subtract-global-mean \
       scp:$ivec_dir/ivectors_train_segmented_128k/ivector.scp ark:- \
-      | transform-vec $ivec_dir/ivectors_dev_${enhancement}_ref/transform.mat ark:- ark:- \
+      | transform-vec $ivec_dir/ivectors_dev_${mictype}/transform.mat ark:- ark:- \
       | ivector-normalize-length ark:- ark:- |" \
-    $ivec_dir/ivectors_dev_${enhancement}_ref/plda || exit 1;
+      $ivec_dir/ivectors_dev_${mictype}/plda || exit 1;
 fi
 
 # Perform PLDA scoring
 if [ $stage -le 7 ]; then
   # Perform PLDA scoring on all pairs of segments for each recording.
   diarization/score_plda.sh --cmd "$train_cmd --mem 4G" \
-    --nj 20 $ivec_dir/ivectors_dev_${enhancement}_ref $ivec_dir/ivectors_dev_${enhancement}_ref \
-    $ivec_dir/ivectors_dev_${enhancement}_ref/plda_scores
+    --nj 8 $ivec_dir/ivectors_dev_${mictype} $ivec_dir/ivectors_dev_${mictype} \
+    $ivec_dir/ivectors_dev_${mictype}/plda_scores
 
   diarization/score_plda.sh --cmd "$train_cmd --mem 4G" \
-    --nj 20 $ivec_dir/ivectors_dev_${enhancement}_ref $ivec_dir/ivectors_eval_${enhancement}_ref \
-    $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores
+    --nj 8 $ivec_dir/ivectors_dev_${mictype} $ivec_dir/ivectors_eval_${mictype} \
+    $ivec_dir/ivectors_eval_${mictype}/plda_scores
 fi
 
 # Cluster the PLDA scores using a stopping threshold.
@@ -204,44 +235,52 @@ if [ $stage -le 8 ]; then
   # In the following loop, we evaluate DER performance on CHiME-5 development 
   # set using some reasonable thresholds for a well-calibrated system.
   for threshold in -0.5 -0.4 -0.3 -0.2 -0.1 -0.05 0 0.05 0.1 0.2 0.3 0.4 0.5; do
-    diarization/cluster.sh --cmd "$train_cmd --mem 4G" --nj 20 \
-      --threshold $threshold --rttm-channel 1 $ivec_dir/ivectors_dev_${enhancement}_ref/plda_scores \
-      $ivec_dir/ivectors_dev_${enhancement}_ref/plda_scores_t$threshold
+    diarization/cluster.sh --cmd "$train_cmd --mem 20G" --nj 8 \
+      --threshold $threshold --rttm-channel 1 $ivec_dir/ivectors_dev_${mictype}/plda_scores \
+      $ivec_dir/ivectors_dev_${mictype}/plda_scores_t$threshold
 
-    md-eval.pl -r data/dev_${enhancement}_ref/rttm \
-     -s $ivec_dir/ivectors_dev_${enhancement}_ref/plda_scores_t$threshold/rttm \
-     2> $ivec_dir/tuning/dev_${enhancement}_ref_t${threshold}.log \
-     > $ivec_dir/tuning/dev_${enhancement}_ref_t${threshold}
+    # for some reason the duration becomes the negative, which will be removed
+    mv $ivec_dir/ivectors_dev_${mictype}/plda_scores_t$threshold/rttm $ivec_dir/ivectors_dev_${mictype}/plda_scores_t$threshold/rttm.bak
+    grep -v "\-[0-9]" $ivec_dir/ivectors_dev_${mictype}/plda_scores_t$threshold/rttm.bak > $ivec_dir/ivectors_dev_${mictype}/plda_scores_t$threshold/rttm
+    
+    md-eval.pl -r data/dev_${mictype}/rttm \
+     -s $ivec_dir/ivectors_dev_${mictype}/plda_scores_t$threshold/rttm \
+     2> $ivec_dir/tuning/dev_${mictype}_t${threshold}.log \
+     > $ivec_dir/tuning/dev_${mictype}_t${threshold}
 
     der=$(grep -oP 'DIARIZATION\ ERROR\ =\ \K[0-9]+([.][0-9]+)?' \
-      $ivec_dir/tuning/dev_${enhancement}_ref_t${threshold})
+      $ivec_dir/tuning/dev_${mictype}_t${threshold})
     if [ $(echo $der'<'$best_der | bc -l) -eq 1 ]; then
       best_der=$der
       best_threshold=$threshold
     fi
   done
-  echo "$best_threshold" > $ivec_dir/tuning/dev_${enhancement}_ref_best
+  echo "$best_threshold" > $ivec_dir/tuning/dev_${mictype}_best
 
-  diarization/cluster.sh --cmd "$train_cmd --mem 4G" --nj 20 \
-    --threshold $(cat $ivec_dir/tuning/dev_${enhancement}_ref_best) --rttm-channel 1 \
-    $ivec_dir/ivectors_dev_${enhancement}_ref/plda_scores $ivec_dir/ivectors_dev_${enhancement}_ref/plda_scores
+  diarization/cluster.sh --cmd "$train_cmd --mem 20G" --nj 8 \
+    --threshold $(cat $ivec_dir/tuning/dev_${mictype}_best) --rttm-channel 1 \
+    $ivec_dir/ivectors_dev_${mictype}/plda_scores $ivec_dir/ivectors_dev_${mictype}/plda_scores
 
   # Cluster CHiME-5 evaluation set using the best threshold found for the CHiME-5
   # development set. The CHiME-5 development set is used as the validation 
   # set to tune the parameters. 
-  diarization/cluster.sh --cmd "$train_cmd --mem 4G" --nj 20 \
-    --threshold $(cat $ivec_dir/tuning/dev_${enhancement}_ref_best) --rttm-channel 1 \
-    $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores
+  diarization/cluster.sh --cmd "$train_cmd --mem 20G" --nj 8 \
+    --threshold $(cat $ivec_dir/tuning/dev_${mictype}_best) --rttm-channel 1 \
+    $ivec_dir/ivectors_eval_${mictype}/plda_scores $ivec_dir/ivectors_eval_${mictype}/plda_scores
 
-  mkdir -p $ivec_dir/results
+  # for some reason the duration becomes the negative, which will be removed
+  mv $ivec_dir/ivectors_eval_${mictype}/plda_scores/rttm $ivec_dir/ivectors_eval_${mictype}/plda_scores/rttm.bak
+  grep -v "\-[0-9]" $ivec_dir/ivectors_eval_${mictype}/plda_scores/rttm.bak > $ivec_dir/ivectors_eval_${mictype}/plda_scores/rttm
+  
+  mkdir -p $ivec_dir/results_${mictype}
   # Compute the DER on the CHiME-5 evaluation set. We use the official metrics of   
   # the DIHARD challenge. The DER is calculated with no unscored collars and including  
   # overlapping speech.
-  md-eval.pl -r data/eval_${enhancement}_ref/rttm \
-    -s $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores/rttm 2> $ivec_dir/results/threshold.log \
-    > $ivec_dir/results/DER_threshold.txt
+  md-eval.pl -r data/eval_${mictype}/rttm \
+    -s $ivec_dir/ivectors_eval_${mictype}/plda_scores/rttm 2> $ivec_dir/results_${mictype}/threshold.log \
+    > $ivec_dir/results_${mictype}/DER_threshold.txt
   der=$(grep -oP 'DIARIZATION\ ERROR\ =\ \K[0-9]+([.][0-9]+)?' \
-    $ivec_dir/results/DER_threshold.txt)
+    $ivec_dir/results_${mictype}/DER_threshold.txt)
   # Using supervised calibration, DER: 28.51%
   echo "Using supervised calibration, DER: $der%"
 fi
@@ -250,15 +289,19 @@ fi
 if [ $stage -le 9 ]; then
   # In this section, we show how to do the clustering if the number of speakers
   # (and therefore, the number of clusters) per recording is known in advance.
-  diarization/cluster.sh --cmd "$train_cmd --mem 4G" --nj 20 \
-    --reco2num-spk data/eval_${enhancement}_ref/reco2num_spk --rttm-channel 1 \
-    $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores_num_spk
+  diarization/cluster.sh --cmd "$train_cmd --mem 20G" --nj 8 \
+    --reco2num-spk data/eval_${mictype}/reco2num_spk --rttm-channel 1 \
+    $ivec_dir/ivectors_eval_${mictype}/plda_scores $ivec_dir/ivectors_eval_${mictype}/plda_scores_num_spk
 
-  md-eval.pl -r data/eval_${enhancement}_ref/rttm \
-    -s $ivec_dir/ivectors_eval_${enhancement}_ref/plda_scores_num_spk/rttm 2> $ivec_dir/results/num_spk.log \
-    > $ivec_dir/results/DER_num_spk.txt
+  # for some reason the duration becomes the negative, which will be removed
+  mv $ivec_dir/ivectors_eval_${mictype}/plda_scores_num_spk/rttm $ivec_dir/ivectors_eval_${mictype}/plda_scores_num_spk/rttm.bak
+  grep -v "\-[0-9]" $ivec_dir/ivectors_eval_${mictype}/plda_scores_num_spk/rttm.bak > $ivec_dir/ivectors_eval_${mictype}/plda_scores_num_spk/rttm
+
+  md-eval.pl -r data/eval_${mictype}/rttm \
+    -s $ivec_dir/ivectors_eval_${mictype}/plda_scores_num_spk/rttm 2> $ivec_dir/results_${mictype}/num_spk.log \
+    > $ivec_dir/results_${mictype}/DER_num_spk.txt
   der=$(grep -oP 'DIARIZATION\ ERROR\ =\ \K[0-9]+([.][0-9]+)?' \
-    $ivec_dir/results/DER_num_spk.txt)
+    $ivec_dir/results_${mictype}/DER_num_spk.txt)
   # Using the oracle number of speakers, DER: 24.42%
   echo "Using the oracle number of speakers, DER: $der%"
 fi
