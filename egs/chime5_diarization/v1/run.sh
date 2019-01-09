@@ -100,8 +100,13 @@ fi
 
 if [ $stage -le 2 ]; then
   # Make MFCCs for each dataset
-  for dset in dev eval; do
-    name=${dset}_${mictype}
+  for name in train; do
+    steps/make_mfcc.sh --write-utt2num-frames true \
+		       --mfcc-config conf/mfcc.conf --nj 40 --cmd "$train_cmd --max-jobs-run 20" \
+		       data/${name} exp/make_mfcc_${name} $mfccdir
+    utils/fix_data_dir.sh data/${name}
+  done
+  for name in dev_${mictype} eval_${mictype}; do
     steps/make_mfcc.sh --write-utt2num-frames true \
 		       --mfcc-config conf/mfcc.conf --nj 8 --cmd "$train_cmd" \
 		       data/${name} exp/make_mfcc_${name} $mfccdir
@@ -119,8 +124,18 @@ if [ $stage -le 2 ]; then
   # were performed in memory it would need to be performed after the subsegmentation,
   # which leads to poorer results.
   ###for name in train dev_${enhancement}_ref eval_${enhancement}_ref; do
-  for dset in dev eval; do
-    name=${dset}_${mictype}
+  for name in train; do
+    local/prepare_feats.sh --nj 40 --cmd "$train_cmd" \
+			   data/$name data/${name}_cmn exp/${name}_cmn
+    if [ -f data/$name/vad.scp ]; then
+      cp data/$name/vad.scp data/${name}_cmn/
+    fi
+    if [ -f data/$name/segments ]; then
+      cp data/$name/segments data/${name}_cmn/
+    fi
+    utils/fix_data_dir.sh data/${name}_cmn
+  done
+  for name in dev_${mictype} eval_${mictype}; do
     local/prepare_feats.sh --nj 8 --cmd "$train_cmd" \
 			   data/$name data/${name}_cmn exp/${name}_cmn
     if [ -f data/$name/vad.scp ]; then

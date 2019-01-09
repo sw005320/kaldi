@@ -49,9 +49,9 @@ if [ $stage -le 1 ]; then
       data/${name} exp/make_mfcc $mfccdir
     utils/fix_data_dir.sh data/${name}
   done
-
+  
   # Compute the energy-based VAD for training set.
-  sid/compute_vad_decision.sh --nj 20 --cmd "$train_cmd" \
+  sid/compute_vad_decision.sh --nj 40 --cmd "$train_cmd" \
       data/train exp/make_vad $vaddir
   utils/fix_data_dir.sh data/train
 
@@ -62,7 +62,7 @@ if [ $stage -le 1 ]; then
   # diarization/nnet3/xvector/extract_xvectors.sh) it would need to be
   # performed after the subsegmentation, which leads to poorer results.
   for name in train dihard_2018_dev dihard_2018_eval; do
-    local/nnet3/xvector/prepare_feats.sh --nj 20 --cmd "$train_cmd" \
+    local/nnet3/xvector/prepare_feats.sh --nj 40 --cmd "$train_cmd" \
       data/$name data/${name}_cmn exp/${name}_cmn
     if [ -f data/$name/vad.scp ]; then
       cp data/$name/vad.scp data/${name}_cmn/
@@ -78,7 +78,7 @@ if [ $stage -le 1 ]; then
   # The segments are created using an energy-based speech activity
   # detection (SAD) system, but this is not necessary.  You can replace
   # this with segments computed from your favorite SAD.
-  diarization/vad_to_segments.sh --nj 20 --cmd "$train_cmd" \
+  diarization/vad_to_segments.sh --nj 40 --cmd "$train_cmd" \
       data/train_cmn data/train_cmn_segmented
 fi
 
@@ -98,7 +98,7 @@ if [ $stage -le 2 ]; then
   rvb_opts=()
   rvb_opts+=(--rir-set-parameters "0.5, RIRS_NOISES/simulated_rirs/smallroom/rir_list")
   rvb_opts+=(--rir-set-parameters "0.5, RIRS_NOISES/simulated_rirs/mediumroom/rir_list")
-
+  if false; then
   # Make a reverberated version of the training data.  Note that we don't add any
   # additive noise here.
   steps/data/reverberate_data_dir.py \
@@ -113,7 +113,7 @@ if [ $stage -le 2 ]; then
   utils/copy_data_dir.sh --utt-suffix "-reverb" data/train_reverb data/train_reverb.new
   rm -rf data/train_reverb
   mv data/train_reverb.new data/train_reverb
-
+  fi
   # Prepare the MUSAN corpus, which consists of music, speech, and noise
   # suitable for augmentation.
   local/make_musan.sh $musan_root data
@@ -157,7 +157,7 @@ if [ $stage -le 4 ]; then
   # This script applies CMVN and removes nonspeech frames.  Note that this is somewhat
   # wasteful, as it roughly doubles the amount of training data on disk.  After
   # creating training examples, this can be removed.
-  local/nnet3/xvector/prepare_feats_for_egs.sh --nj 20 --cmd "$train_cmd" \
+  local/nnet3/xvector/prepare_feats_for_egs.sh --nj 40 --cmd "$train_cmd" \
     data/train_combined data/train_combined_no_sil exp/train_combined_no_sil
   utils/fix_data_dir.sh data/train_combined_no_sil
 fi
