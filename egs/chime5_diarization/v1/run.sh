@@ -72,28 +72,26 @@ if [ $stage -le 1 ]; then
       data/${name}/utt2spk \
       data/${name}/segments \
       data/${name}/rttm
-    # remove speaker ID information for utt2spk, spk2utt, segment, and text
-    mv data/${name}/utt2spk data/${name}/utt2spk.org
-    mv data/${name}/spk2utt data/${name}/spk2utt.org
-    mv data/${name}/segments data/${name}/segments.org
+    # remove speaker ID information for text
     mv data/${name}/text data/${name}/text.org
-    paste -d " " \
-      <(awk '{print $1}' data/${name}/utt2spk.org | sed -e "s/.*\(S.*_U.*\)_.*\(\.CH..*\)/\1\2/") \
-      <(sed -e "s/.*\(S.*_U.*\)_.*\(\.CH.\).*/\1\2/" data/${name}/utt2spk.org) \
-      > data/${name}/utt2spk
-    paste -d " " \
-      <(awk '{print $1}' data/${name}/segments.org | sed -e "s/.*\(S.*_U.*\)_.*\(\.CH..*\)/\1\2/") \
-      <(cut -f 2- -d" " data/${name}/segments.org) \
-      > data/${name}/segments
     paste -d " " \
       <(awk '{print $1}' data/${name}/text.org | sed -e "s/.*\(S.*_U.*\)_.*\(\.CH..*\)/\1\2/") \
       <(cut -f 2- -d" " data/${name}/text.org) \
-      > data/${name}/text
+      > data/${name}/text_tmp
+    sort -k1,1 data/${name}/text_tmp > data/${name}/text
+    rm data/${name}/text_tmp
+    rm data/${name}/text.org
+    # preparing utt2spk, spk2utt, segments
+    python local/prepare_utt2spk_segments.py data/${name}
     utils/utt2spk_to_spk2utt.pl data/${name}/utt2spk > data/${name}/spk2utt
-    # preparing reco2num_spk
-    # CHiME-5 always has "4" speakers per recording
+    ## preparing reco2num_spk
+    ## CHiME-5 always has "4" speakers per recording
     awk '{print $2 " 4"}' data/${name}/rttm \
       | sort | uniq > data/${name}/reco2num_spk
+    # sort the rttm file
+    sort -k2,2 -k4,4n data/${name}/rttm > data/${name}/rttm_tmp
+    mv data/${name}/rttm_tmp data/${name}/rttm 
+    rm data/${name}/text
     utils/fix_data_dir.sh data/${name}
   done
 fi
